@@ -22,13 +22,14 @@ import { readCardLayout, writeCardLayout, type CardLayout } from '@/components/u
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNow } from '@/hooks/useNow';
 import { useRevealGroup } from '@/hooks/motion';
-import { useAuthStore, useQuotaStore, useThemeStore } from '@/stores';
+import { useAuthStore, useConfigStore, useQuotaStore, useThemeStore } from '@/stores';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getQuotaCacheKey } from '@/utils/quota/identity';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { QuotaHeader } from './components/QuotaHeader';
 import { QuotaCard } from './components/QuotaCard';
 import { QuotaTimeline } from './components/QuotaTimeline';
+import { QuotaPool } from './components/QuotaPool';
 import {
   CARD_ENTRANCE_BUDGET_MS,
   QUOTA_CARD_LAYOUT_KEY,
@@ -198,6 +199,9 @@ export function QuotaPage() {
       ),
     [entries]
   );
+  const tabEntries = useMemo(() => filterEntriesByTab(entries, tab), [entries, tab]);
+  const routingStrategy = useConfigStore((state) => state.config?.routingStrategy);
+  const [poolRefreshToken, setPoolRefreshToken] = useState(0);
   const filteredEntries = useMemo(
     () => filterEntriesBySearch(filterEntriesByTab(entries, tab), search),
     [entries, tab, search]
@@ -298,6 +302,7 @@ export function QuotaPage() {
     if (disableControls) return;
     pendingRefreshRef.current = sessionGeneration;
     void loadFiles();
+    setPoolRefreshToken((value) => value + 1);
   }, [disableControls, loadFiles, sessionGeneration]);
 
   useEffect(() => {
@@ -407,6 +412,14 @@ export function QuotaPage() {
             onChange={handleTabChange}
           />
         </div>
+
+        <QuotaPool
+          entries={tabEntries}
+          quotaFor={getQuota}
+          resolvedTheme={resolvedTheme}
+          routingStrategy={routingStrategy}
+          refreshToken={poolRefreshToken}
+        />
 
         <div className={styles.toolbar}>
           <div className={styles.search}>
