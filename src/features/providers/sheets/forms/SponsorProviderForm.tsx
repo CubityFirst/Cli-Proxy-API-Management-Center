@@ -62,7 +62,6 @@ interface SponsorProviderFormProps {
   mode: 'create' | 'edit';
   mutating: boolean;
   formId: string;
-  variant?: 'quickStart';
   onSubmit: (input: ProviderEntryFormInput) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }
@@ -760,7 +759,6 @@ export function SponsorProviderForm({
   mode,
   mutating,
   formId,
-  variant,
   onSubmit,
   onDirtyChange,
 }: SponsorProviderFormProps) {
@@ -883,9 +881,6 @@ export function SponsorProviderForm({
     }
   };
 
-  const formClassName = [styles.form, variant === 'quickStart' ? styles.quickStartForm : '']
-    .filter(Boolean)
-    .join(' ');
   const aggregationConflict =
     mode === 'edit'
       ? getSponsorAggregationConflict(getSponsorRaw(resource, definition.brand))
@@ -893,7 +888,7 @@ export function SponsorProviderForm({
 
   if (aggregationConflict || !definition.protocols.length) {
     return (
-      <form id={formId} className={formClassName} onSubmit={(event) => event.preventDefault()}>
+      <form id={formId} className={styles.form} onSubmit={(event) => event.preventDefault()}>
         <div className={styles.errorBox} role="alert">
           {aggregationConflict ? t('providersPage.sponsor.aggregationConflict') : conflictWarning}
         </div>
@@ -902,7 +897,7 @@ export function SponsorProviderForm({
   }
 
   return (
-    <form id={formId} className={formClassName} onSubmit={handleSubmit} noValidate>
+    <form id={formId} className={styles.form} onSubmit={handleSubmit} noValidate>
       {conflictWarning && (
         <div className={styles.errorBox} role="note">
           {conflictWarning}

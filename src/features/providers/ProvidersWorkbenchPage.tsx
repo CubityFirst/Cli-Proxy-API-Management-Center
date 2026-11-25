@@ -9,7 +9,6 @@ import { ProvidersHeader, type ProvidersHeaderSummary } from './components/Provi
 import { BrandTabs } from './components/BrandTabs';
 import { BrandPanel, type BrandPanelControls } from './components/BrandPanel';
 import { ProviderPicker } from './components/ProviderPicker';
-import { SponsorQuickStartPanel } from './components/SponsorQuickStartPanel';
 import {
   ProviderSheet,
   type ProviderSheetHandle,
@@ -23,7 +22,6 @@ import {
   partitionProviderGroups,
   selectVisibleResources,
 } from './resourceView';
-import { APIKEY_FUN_DISPLAY_NAME } from './sponsor';
 import { isSponsorPartialMutationError } from './sponsorMutationRecovery';
 import { useProviderWorkbench } from './useProviderWorkbench';
 import {
@@ -43,10 +41,6 @@ import type {
 } from './types';
 import styles from './ProvidersWorkbenchPage.module.scss';
 
-interface ProvidersWorkbenchPageProps {
-  fixedBrand?: ProviderBrand;
-}
-
 const formatDateTime = (iso: string, locale?: string) => {
   try {
     const date = new Date(iso);
@@ -61,7 +55,7 @@ const formatDateTime = (iso: string, locale?: string) => {
 
 const errorMessageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPageProps = {}) {
+export function ProvidersWorkbenchPage() {
   const { t, i18n } = useTranslation();
   const connectionStatus = useAuthStore((s) => s.connectionStatus);
   const { showNotification, showConfirmation } = useNotificationStore();
@@ -106,12 +100,10 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
   );
 
   const allGroups = useMemo(() => workbench.snapshot?.groups ?? [], [workbench.snapshot]);
+  // The APIKEY.FUN sponsor bundle is not offered in this fork.
   const groups = useMemo(
-    () =>
-      fixedBrand
-        ? allGroups.filter((group) => group.id === fixedBrand)
-        : allGroups.filter((group) => group.id !== 'apikeyFun'),
-    [allGroups, fixedBrand]
+    () => allGroups.filter((group) => group.id !== 'apikeyFun'),
+    [allGroups]
   );
   // Every brand stays in the strip (regular providers first, quick-connect partners after).
   const stripGroups = useMemo(() => {
@@ -123,10 +115,9 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
     [groups]
   );
   const activeBrand: ProviderBrand =
-    fixedBrand ??
-    (groups.some((group) => group.id === uiState.activeBrand)
+    groups.some((group) => group.id === uiState.activeBrand)
       ? uiState.activeBrand
-      : (connectedGroups[0]?.id ?? stripGroups[0]?.id ?? 'gemini'));
+      : (connectedGroups[0]?.id ?? stripGroups[0]?.id ?? 'gemini');
   const activeGroup = groups.find((group) => group.id === activeBrand) ?? groups[0] ?? null;
   const partnerBrands = useMemo(
     () =>
@@ -208,14 +199,6 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
     [groups, i18n.language, t, workbench.snapshot]
   );
 
-  const isQuickStart = fixedBrand === 'apikeyFun';
-  const quickStartResource =
-    isQuickStart && activeGroup ? (activeGroup.resources[0] ?? null) : null;
-  const headerTitle = isQuickStart
-    ? quickStartResource
-      ? APIKEY_FUN_DISPLAY_NAME
-      : t('nav.quick_start')
-    : t('providersPage.header.title');
   const openConnectionForm = useCallback(
     (brand: ProviderBrand, fromPicker: boolean) => {
       const group = groups.find((item) => item.id === brand);
@@ -398,11 +381,11 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
 
   const header = (
     <ProvidersHeader
-      title={headerTitle}
-      summary={isQuickStart ? undefined : summary}
+      title={t('providersPage.header.title')}
+      summary={summary}
       isFetching={workbench.isFetching}
       onRefresh={() => void handleRefresh()}
-      newLabel={fixedBrand ? undefined : t('providersPage.actions.addProvider')}
+      newLabel={t('providersPage.actions.addProvider')}
       newDisabled={disableMutations}
       onNew={openPicker}
     />
@@ -428,7 +411,7 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
     />
   );
 
-  if (!fixedBrand && groups.length > 0 && connectedGroups.length === 0) {
+  if (groups.length > 0 && connectedGroups.length === 0) {
     // First run: nothing connected yet, so the catalogue itself is the page.
     return (
       <div className={styles.page}>
@@ -458,22 +441,6 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
     );
   }
 
-  if (isQuickStart) {
-    return (
-      <div className={styles.page}>
-        {header}
-        {errorBanner}
-        <div className={styles.quickStartStack}>
-          <SponsorQuickStartPanel
-            resource={quickStartResource}
-            workbench={workbench}
-            mutationDisabled={disableMutations}
-          />
-        </div>
-      </div>
-    );
-  }
-
   const tabId = (brand: ProviderBrand) => `${domId}-tab-${brand}`;
   const panelId = `${domId}-panel`;
 
@@ -483,18 +450,16 @@ export function ProvidersWorkbenchPage({ fixedBrand }: ProvidersWorkbenchPagePro
       {errorBanner}
 
       <div className={styles.workbench}>
-        {!fixedBrand ? (
-          <BrandTabs
-            groups={stripGroups}
-            activeBrand={activeGroup.id}
-            onSelect={selectBrand}
-            tabId={tabId}
-            panelId={panelId}
-            onAdd={openPicker}
-            partnerBrands={partnerBrands}
-            addDisabled={disableMutations}
-          />
-        ) : null}
+        <BrandTabs
+          groups={stripGroups}
+          activeBrand={activeGroup.id}
+          onSelect={selectBrand}
+          tabId={tabId}
+          panelId={panelId}
+          onAdd={openPicker}
+          partnerBrands={partnerBrands}
+          addDisabled={disableMutations}
+        />
         <BrandPanel
           id={panelId}
           labelledBy={tabId(activeGroup.id)}
