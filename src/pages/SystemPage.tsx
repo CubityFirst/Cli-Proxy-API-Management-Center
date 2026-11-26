@@ -20,7 +20,9 @@ import {
   useModelsStore,
   useThemeStore,
 } from '@/stores';
-import { apiClient, configApi, modelsApi, versionApi } from '@/services/api';
+import { apiClient, configApi, modelsApi, serverUpdateApi, versionApi } from '@/services/api';
+import type { ServerUpdateInfo } from '@/services/api';
+import { ServerUpdateModal } from '@/features/serverUpdate/ServerUpdateModal';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
 import { formatDateTimeValue } from '@/utils/format';
 import { classifyModels } from '@/utils/models';
@@ -116,6 +118,8 @@ export function SystemPage() {
   const [requestLogTouched, setRequestLogTouched] = useState(false);
   const [requestLogSaving, setRequestLogSaving] = useState(false);
   const [checkingVersion, setCheckingVersion] = useState(false);
+  const [serverUpdateInfo, setServerUpdateInfo] = useState<ServerUpdateInfo | null>(null);
+  const [serverUpdateOpen, setServerUpdateOpen] = useState(false);
 
   const versionTapCount = useRef(0);
   const modelsRequestId = useRef(0);
@@ -295,6 +299,19 @@ export function SystemPage() {
   const handleVersionCheck = useCallback(async () => {
     setCheckingVersion(true);
     try {
+      // Servers with an update repository configured can also install the update;
+      // older servers (404) or ones without a repository get the plain check below.
+      try {
+        const info = await serverUpdateApi.get();
+        if (info.repository) {
+          setServerUpdateInfo(info);
+          setServerUpdateOpen(true);
+          return;
+        }
+      } catch (error: unknown) {
+        if ((error as { status?: number })?.status !== 404) throw error;
+      }
+
       const data = await versionApi.checkLatest();
       const latestRaw = data?.['latest-version'] ?? data?.latest_version ?? data?.latest ?? '';
       const latest = typeof latestRaw === 'string' ? latestRaw : String(latestRaw ?? '');
@@ -572,6 +589,12 @@ export function SystemPage() {
           </div>
         </Card>
       </div>
+
+      <ServerUpdateModal
+        open={serverUpdateOpen}
+        info={serverUpdateInfo}
+        onClose={() => setServerUpdateOpen(false)}
+      />
 
       <Modal
         open={requestLogModalOpen}
