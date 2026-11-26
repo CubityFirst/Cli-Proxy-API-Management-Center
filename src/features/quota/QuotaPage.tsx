@@ -30,6 +30,7 @@ import { QuotaHeader } from './components/QuotaHeader';
 import { QuotaCard } from './components/QuotaCard';
 import { QuotaTimeline } from './components/QuotaTimeline';
 import { QuotaPool } from './components/QuotaPool';
+import { CacheStats } from './components/CacheStats';
 import {
   CARD_ENTRANCE_BUDGET_MS,
   QUOTA_CARD_LAYOUT_KEY,
@@ -420,6 +421,10 @@ export function QuotaPage() {
           routingStrategy={routingStrategy}
           refreshToken={poolRefreshToken}
         />
+
+        {(tab === 'all' || tab === 'claude') && (
+          <CacheStats resolvedTheme={resolvedTheme} refreshToken={poolRefreshToken} />
+        )}
 
         <div className={styles.toolbar}>
           <div className={styles.search}>

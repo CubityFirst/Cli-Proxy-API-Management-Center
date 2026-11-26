@@ -7,7 +7,7 @@
  * All maths lives in quotaPoolModel.ts; this file is data plumbing and layout.
  */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNow } from '@/hooks/useNow';
@@ -27,6 +27,7 @@ import {
 import type { PoolAccount, PoolHistory, PoolPoint, PoolResetEvent } from '../quotaPoolModel';
 import type { QuotaFileEntry } from '../logic';
 import type { QuotaCardState } from '../providers';
+import { useElementWidth } from '../useElementWidth';
 import styles from './QuotaPool.module.scss';
 
 const DAY_MS = 24 * HOUR_MS;
@@ -162,24 +163,6 @@ function useFormatters(locale: string) {
 }
 
 /* ---------------------------------------------------------------- hooks */
-
-function useElementWidth<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    setWidth(element.getBoundingClientRect().width);
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((items) => {
-      const next = items[0]?.contentRect.width;
-      if (typeof next === 'number') setWidth(next);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
-}
 
 function useQuotaHistory(refreshToken: number) {
   const [history, setHistory] = useState<QuotaHistory | null>(null);
