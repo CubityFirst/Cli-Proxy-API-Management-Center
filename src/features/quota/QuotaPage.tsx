@@ -77,6 +77,7 @@ const displayNameFor = (name: string) => name;
 export function QuotaPage() {
   const { t } = useTranslation();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  const apiBase = useAuthStore((state) => state.apiBase);
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
 
   const [files, setFiles] = useState<AuthFileItem[]>([]);
@@ -420,6 +421,10 @@ export function QuotaPage() {
           resolvedTheme={resolvedTheme}
           routingStrategy={routingStrategy}
           refreshToken={poolRefreshToken}
+          apiBase={apiBase}
+          onRefresh={handleRefreshAll}
+          refreshing={loading || batchLoading}
+          refreshDisabled={disableControls}
         />
 
         {(tab === 'all' || tab === 'claude') && (

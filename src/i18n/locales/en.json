@@ -1732,7 +1732,10 @@
     "chart_label": "Remaining weekly quota across the pool, recorded and projected",
     "chart_label_drain": "Quota burned per hour across the pool, recorded and projected",
     "now": "Now",
-    "empty_at": "Empty {{time}}"
+    "empty_at": "Empty {{time}}",
+    "cached_notice": "Cached data from {{time}}. Click refresh to view current quota.",
+    "cached_refreshing": "Loading current quota…",
+    "cached_refresh": "Refresh"
   },
   "cache_stats": {
     "title": "Prompt cache",

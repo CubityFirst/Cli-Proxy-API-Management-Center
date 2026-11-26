@@ -5,6 +5,10 @@
  * order and refills each one at its weekly reset.
  *
  * All maths lives in quotaPoolModel.ts; this file is data plumbing and layout.
+ *
+ * Each loaded weekly quota is also saved (see services/storage/quotaPoolSnapshot),
+ * so after a page reload the chart shows the last loaded picture, dimmed and
+ * marked as cached, until the quotas are refreshed.
  */
 
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
@@ -13,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 import { useNow } from '@/hooks/useNow';
 import { quotaHistoryApi } from '@/services/api/quotaHistory';
 import type { QuotaHistory } from '@/services/api/quotaHistory';
+import { readPoolSnapshot, writePoolSnapshot } from '@/services/storage/quotaPoolSnapshot';
+import type { PoolSnapshot } from '@/services/storage/quotaPoolSnapshot';
 import { Select } from '@/components/ui/Select';
 import type { ResolvedTheme } from '@/types';
 import {
@@ -22,9 +28,16 @@ import {
   projectPool,
   recordedBurnSeries,
   recordedSeries,
+  restoreCachedAccount,
   weeklyAverageBurnPerHour,
 } from '../quotaPoolModel';
-import type { PoolAccount, PoolHistory, PoolPoint, PoolResetEvent } from '../quotaPoolModel';
+import type {
+  PoolAccount,
+  PoolHistory,
+  PoolPoint,
+  PoolResetEvent,
+  PoolSample,
+} from '../quotaPoolModel';
 import type { QuotaFileEntry } from '../logic';
 import type { QuotaCardState } from '../providers';
 import { useElementWidth } from '../useElementWidth';
@@ -65,13 +78,37 @@ export interface QuotaPoolProps {
   routingStrategy: string | undefined;
   /** Changes when the user refreshes everything, to refetch history too. */
   refreshToken: number;
+  /** Server the quotas come from; scopes the saved snapshot. Empty disables it. */
+  apiBase: string;
+  /** Refreshes every quota; offered on a chart that shows cached data. */
+  onRefresh?: () => void;
+  /** A refresh is running. */
+  refreshing?: boolean;
+  /** Refreshing is unavailable, e.g. while disconnected. */
+  refreshDisabled?: boolean;
 }
 
 interface ProviderPool {
   provider: PoolProvider;
   accounts: PoolAccount[];
   emails: Record<string, string>;
+  /** Oldest observation behind a cached account; null when every account is live. */
+  cachedAsOf: number | null;
 }
+
+const isPoolProvider = (type: string): type is PoolProvider =>
+  (POOL_PROVIDERS as readonly string[]).includes(type);
+
+/** Not loaded in this page session yet, or loading now: the saved snapshot may stand in. */
+const awaitingQuota = (quota: QuotaCardState | undefined) =>
+  !quota || quota.status === 'idle' || quota.status === 'loading';
+
+/**
+ * Quota states already saved to the snapshot. A refresh replaces the state
+ * object, so an unseen object is a newly loaded value; remounting the page
+ * with the same objects doesn't re-save them under a new time.
+ */
+const savedQuotaStates = new WeakSet<object>();
 
 function poolAccountFor(
   entry: QuotaFileEntry,
@@ -108,25 +145,33 @@ function shortLabel(email: string, fileName: string): string {
   return fileName.replace(/\.json$/i, '');
 }
 
+/** One credential's recorded samples, matched by auth ID, then by email label. */
+function samplesFor(
+  history: QuotaHistory | null,
+  id: string,
+  email: string | undefined
+): PoolSample[] {
+  if (!history) return [];
+  const lower = email?.toLowerCase();
+  const series =
+    history.series.find((item) => item.authId === id) ??
+    (lower ? history.series.find((item) => item.label.toLowerCase() === lower) : undefined);
+  return (series?.samples ?? []).map((sample) => ({
+    atMs: sample.atMs,
+    weeklyUsed: sample.weeklyUsed,
+    weeklyResetMs: sample.weeklyResetMs,
+  }));
+}
+
 function historyFor(
   accounts: PoolAccount[],
   emails: Record<string, string>,
   history: QuotaHistory | null
 ): PoolHistory {
-  if (!history) return {};
   const out: PoolHistory = {};
   for (const account of accounts) {
-    const email = emails[account.id]?.toLowerCase();
-    const series =
-      history.series.find((item) => item.authId === account.id) ??
-      (email ? history.series.find((item) => item.label.toLowerCase() === email) : undefined);
-    if (series && series.samples.length > 0) {
-      out[account.id] = series.samples.map((sample) => ({
-        atMs: sample.atMs,
-        weeklyUsed: sample.weeklyUsed,
-        weeklyResetMs: sample.weeklyResetMs,
-      }));
-    }
+    const samples = samplesFor(history, account.id, emails[account.id]);
+    if (samples.length > 0) out[account.id] = samples;
   }
   return out;
 }
@@ -199,6 +244,10 @@ export function QuotaPool({
   resolvedTheme,
   routingStrategy,
   refreshToken,
+  apiBase,
+  onRefresh,
+  refreshing = false,
+  refreshDisabled = false,
 }: QuotaPoolProps) {
   const { t, i18n } = useTranslation();
   const now = useNow();
@@ -211,22 +260,67 @@ export function QuotaPool({
   const [offset, setOffset] = useState(0);
   const { history, available } = useQuotaHistory(refreshToken);
 
+  // Save each newly loaded weekly quota so a reload can show the last picture.
+  useEffect(() => {
+    if (!apiBase) return;
+    const capturedAt = Date.now();
+    const updates: PoolSnapshot = {};
+    let changed = false;
+    for (const entry of entries) {
+      if (!isPoolProvider(entry.type)) continue;
+      const quota = quotaFor(entry);
+      if (!quota || savedQuotaStates.has(quota)) continue;
+      const account = poolAccountFor(entry, quota);
+      if (!account) continue;
+      savedQuotaStates.add(quota);
+      (updates[entry.type] ??= {})[account.id] = {
+        remaining: account.remaining,
+        resetAtMs: account.resetAtMs,
+        periodMs: account.periodMs,
+        capturedAt,
+      };
+      changed = true;
+    }
+    if (changed) writePoolSnapshot(apiBase, updates, capturedAt);
+  }, [apiBase, entries, quotaFor]);
+
   const pools = useMemo<ProviderPool[]>(() => {
+    // Read on every rebuild: the effect above may have saved newer values since.
+    const snapshot = readPoolSnapshot(apiBase);
     return POOL_PROVIDERS.map((provider) => {
       const accounts: PoolAccount[] = [];
       const emails: Record<string, string> = {};
+      let cachedAsOf: number | null = null;
       for (const entry of entries) {
         if (entry.type !== provider) continue;
-        const account = poolAccountFor(entry, quotaFor(entry));
-        if (!account) continue;
+        const quota = quotaFor(entry);
         const email = entry.file.email?.trim() ?? '';
+        let account = poolAccountFor(entry, quota);
+        const cached =
+          account || !awaitingQuota(quota) ? undefined : snapshot[provider]?.[entry.file.name];
+        if (cached) {
+          const restored = restoreCachedAccount(
+            cached,
+            samplesFor(history, entry.file.name, email),
+            now
+          );
+          account = {
+            id: entry.file.name,
+            label: entry.file.name,
+            remaining: restored.remaining,
+            resetAtMs: restored.resetAtMs,
+            periodMs: cached.periodMs,
+          };
+          cachedAsOf = cachedAsOf === null ? restored.asOf : Math.min(cachedAsOf, restored.asOf);
+        }
+        if (!account) continue;
         emails[account.id] = email;
         account.label = showEmails ? email || entry.file.name : shortLabel(email, entry.file.name);
         accounts.push(account);
       }
-      return { provider, accounts, emails };
+      return { provider, accounts, emails, cachedAsOf };
     }).filter((pool) => pool.accounts.length > 0);
-  }, [entries, quotaFor, showEmails]);
+  }, [apiBase, entries, quotaFor, showEmails, history, now]);
 
   const span = useMemo(() => {
     const start = new Date(now);
@@ -360,6 +454,9 @@ export function QuotaPool({
           routingStrategy={routingStrategy}
           color={LINE_COLORS[pool.provider][resolvedTheme]}
           fmt={fmt}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+          refreshDisabled={refreshDisabled}
         />
       ))}
     </section>
@@ -380,6 +477,9 @@ interface PoolCardProps {
   routingStrategy: string | undefined;
   color: string;
   fmt: ReturnType<typeof useFormatters>;
+  onRefresh?: () => void;
+  refreshing: boolean;
+  refreshDisabled: boolean;
 }
 
 function PoolCard({
@@ -394,9 +494,14 @@ function PoolCard({
   routingStrategy,
   color,
   fmt,
+  onRefresh,
+  refreshing,
+  refreshDisabled,
 }: PoolCardProps) {
   const { t } = useTranslation();
-  const { accounts } = pool;
+  const { accounts, cachedAsOf } = pool;
+  const cached = cachedAsOf !== null;
+  const dim = cached ? ` ${styles.dimmed}` : '';
   const capacity = accounts.length * 100;
   const order = drainOrderForStrategy(routingStrategy);
 
@@ -492,13 +597,13 @@ function PoolCard({
             {t(`quota_pool.order_${order.replace('-', '_')}`)}
           </span>
         </div>
-        <div className={styles.headline}>
+        <div className={`${styles.headline}${dim}`}>
           <span className={styles.total}>{pct(current)}</span>
           <span className={styles.capacity}>
             {t('quota_pool.of_capacity', { capacity: pct(capacity) })}
           </span>
         </div>
-        <dl className={styles.stats}>
+        <dl className={`${styles.stats}${dim}`}>
           {stats.map((stat) => (
             <div key={stat.key} className={styles.stat}>
               <dt>{t(`quota_pool.stat_${stat.key}`, { hours: stat.hours })}</dt>
@@ -508,24 +613,49 @@ function PoolCard({
         </dl>
       </header>
 
-      <PoolChart
-        mode={mode}
-        capacity={capacity}
-        accounts={accounts}
-        recorded={model.recorded}
-        projected={projection.points}
-        resets={projection.resets}
-        poolEmptyAt={projection.poolEmptyAt}
-        burnSeries={model.burnSeries}
-        projectedBurn={model.burn * futureFactor}
-        now={now}
-        span={span}
-        color={color}
-        showAccounts={showAccounts}
-        fmt={fmt}
-      />
+      <div className={styles.chartArea}>
+        <div className={cached ? styles.dimmed : undefined}>
+          <PoolChart
+            mode={mode}
+            capacity={capacity}
+            accounts={accounts}
+            recorded={model.recorded}
+            projected={projection.points}
+            resets={projection.resets}
+            poolEmptyAt={projection.poolEmptyAt}
+            burnSeries={model.burnSeries}
+            projectedBurn={model.burn * futureFactor}
+            now={now}
+            span={span}
+            color={color}
+            showAccounts={showAccounts}
+            fmt={fmt}
+          />
+        </div>
+        {cachedAsOf !== null && (
+          <div className={styles.cachedOverlay}>
+            <div className={styles.cachedNotice} role="status">
+              <span>
+                {refreshing
+                  ? t('quota_pool.cached_refreshing')
+                  : t('quota_pool.cached_notice', { time: fmt.at(cachedAsOf) })}
+              </span>
+              {onRefresh && !refreshing && (
+                <button
+                  type="button"
+                  className={styles.toggle}
+                  disabled={refreshDisabled}
+                  onClick={onRefresh}
+                >
+                  {t('quota_pool.cached_refresh')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
-      <footer className={styles.legend}>
+      <footer className={`${styles.legend}${dim}`}>
         <span className={styles.legendTitle}>{t('quota_pool.legend_pool')}</span>
         <span className={styles.legendItem}>
           <svg width="22" height="6" aria-hidden="true">

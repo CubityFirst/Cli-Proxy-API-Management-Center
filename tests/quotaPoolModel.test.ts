@@ -8,6 +8,7 @@ import {
   recordedBurnSeries,
   recordedSeries,
   remainingAt,
+  restoreCachedAccount,
   rollForward,
   weeklyAverageBurnPerHour,
 } from '../src/features/quota/quotaPoolModel';
@@ -43,6 +44,43 @@ describe('rollForward', () => {
   test('moves a past reset forward by whole periods', () => {
     expect(rollForward(NOW - HOUR_MS, WEEK_MS, NOW)).toBe(NOW - HOUR_MS + WEEK_MS);
     expect(rollForward(NOW + HOUR_MS, WEEK_MS, NOW)).toBe(NOW + HOUR_MS);
+  });
+});
+
+describe('restoreCachedAccount', () => {
+  const cached = {
+    remaining: 60,
+    resetAtMs: NOW + 24 * HOUR_MS,
+    periodMs: WEEK_MS,
+    capturedAt: NOW - 5 * HOUR_MS,
+  };
+
+  test('keeps the cached value when no newer observation exists', () => {
+    expect(restoreCachedAccount(cached, [sample(8, 10)], NOW)).toEqual({
+      remaining: 60,
+      resetAtMs: NOW + 24 * HOUR_MS,
+      asOf: NOW - 5 * HOUR_MS,
+    });
+  });
+
+  test('a newer history observation replaces the cached value', () => {
+    const resetMs = NOW + 23 * HOUR_MS;
+    // The future sample (beyond now) is ignored.
+    const samples = [sample(8, 10), sample(2, 55, resetMs), sample(-1, 90)];
+    expect(restoreCachedAccount(cached, samples, NOW)).toEqual({
+      remaining: 45,
+      resetAtMs: resetMs,
+      asOf: NOW - 2 * HOUR_MS,
+    });
+  });
+
+  test('a weekly reset that has passed refills the window', () => {
+    const stale = { ...cached, remaining: 5, resetAtMs: NOW - HOUR_MS };
+    expect(restoreCachedAccount(stale, [], NOW)).toEqual({
+      remaining: 100,
+      resetAtMs: NOW - HOUR_MS + WEEK_MS,
+      asOf: cached.capturedAt,
+    });
   });
 });
 

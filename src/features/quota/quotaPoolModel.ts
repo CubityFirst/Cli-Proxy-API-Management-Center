@@ -85,6 +85,48 @@ export function rollForward(resetAtMs: number, periodMs: number, now: number): n
   return resetAtMs + periods * periodMs;
 }
 
+/* -------------------------------------------------------------- cached */
+
+/** A credential's weekly window as last loaded, possibly in an earlier page session. */
+export interface CachedPoolAccount {
+  remaining: number;
+  resetAtMs: number;
+  periodMs: number;
+  /** When the value was loaded. */
+  capturedAt: number;
+}
+
+/**
+ * Brings a cached account up to `now`. A history observation newer than the
+ * cached value replaces it (so the recorded line meets the cached level at
+ * "now" without a jump), and a weekly reset that has passed since refills the
+ * window. `asOf` is when the returned level was last observed.
+ */
+export function restoreCachedAccount(
+  cached: CachedPoolAccount,
+  samples: readonly PoolSample[],
+  now: number
+): { remaining: number; resetAtMs: number; asOf: number } {
+  let remaining = clamp(cached.remaining, 0, 100);
+  let resetAtMs = cached.resetAtMs;
+  let asOf = cached.capturedAt;
+  let latest: PoolSample | null = null;
+  for (const sample of samples) {
+    if (sample.atMs > now) break;
+    latest = sample;
+  }
+  if (latest && latest.atMs > asOf) {
+    remaining = clamp(100 - latest.weeklyUsed, 0, 100);
+    if (latest.weeklyResetMs !== null) resetAtMs = latest.weeklyResetMs;
+    asOf = latest.atMs;
+  }
+  if (resetAtMs <= now) {
+    remaining = 100;
+    resetAtMs = rollForward(resetAtMs, cached.periodMs, now);
+  }
+  return { remaining, resetAtMs, asOf };
+}
+
 /* ------------------------------------------------------------ recorded */
 
 /**
