@@ -1229,6 +1229,10 @@
           "label": "Subagent session affinity",
           "hint": "Enabled by default; only effective when session affinity is enabled. Subagents inherit their parent's credential to reuse caches. Disable to distribute subagents across the credential pool for greater concurrency."
         },
+        "routingSessionAffinityExpiringWindow": {
+          "label": "Move sessions to expiring quota",
+          "hint": "Only effective when session affinity is enabled. When an account whose weekly quota resets within this window is available, running sessions move to it so that quota isn't wasted. Each move costs one prompt-cache rewrite. Accounts that have used 90% or more of their weekly or 5-hour limit are skipped. Leave empty to disable. Example: 24h."
+        },
         "saveCooldownStatus": {
           "label": "Persist cooldown status",
           "hint": "Save per-credential cooldown status in .cds files beside auth files. Disabled by default; otherwise status is kept only in memory."
@@ -1758,6 +1762,7 @@
     "settings_unknown": "Before tracking",
     "settings_affinity": "affinity {{ttl}}, rebind on {{rebind}}",
     "settings_no_affinity": "no affinity",
+    "settings_expiring": "moves to expiring quota within {{window}}",
     "current": "current",
     "col_setting": "Setting",
     "col_period": "Period",

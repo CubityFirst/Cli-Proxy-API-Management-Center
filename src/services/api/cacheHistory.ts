@@ -40,6 +40,8 @@ export interface CacheSettings {
   sessionAffinity: boolean;
   affinityTtl: string;
   rebindOn: string;
+  /** Empty when bound sessions never move to expiring quota. */
+  expiringWindow: string;
 }
 
 export interface CacheMarker extends CacheSettings {
@@ -125,6 +127,7 @@ export function normalizeCacheHistory(raw: unknown): CacheHistory {
             sessionAffinity: m.session_affinity === true,
             affinityTtl: str(m.affinity_ttl),
             rebindOn: str(m.rebind_on),
+            expiringWindow: str(m.expiring_window),
           },
         ];
       })

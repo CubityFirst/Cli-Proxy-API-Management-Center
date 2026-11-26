@@ -267,7 +267,11 @@ function useSettingsLabel() {
           rebind: settings.rebindOn || 'any',
         })
       : t('cache_stats.settings_no_affinity');
-    return `${settings.strategy || 'round-robin'} · ${affinity}`;
+    const expiring =
+      settings.sessionAffinity && settings.expiringWindow
+        ? ` · ${t('cache_stats.settings_expiring', { window: settings.expiringWindow })}`
+        : '';
+    return `${settings.strategy || 'round-robin'} · ${affinity}${expiring}`;
   };
 }
 

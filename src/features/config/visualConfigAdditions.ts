@@ -17,6 +17,11 @@ export const ADDITION_FIELDS = [
     kind: 'boolean',
   },
   {
+    key: 'routingSessionAffinityExpiringWindow',
+    path: 'routing.session-affinity-expiring-window'.split('.'),
+    kind: 'string',
+  },
+  {
     key: 'saveCooldownStatus',
     path: 'routing.cooldown.save-cooldown-status'.split('.'),
     kind: 'boolean',
@@ -297,6 +302,7 @@ export function validateVisualAdditions(
   const errors: VisualConfigValidationErrors = {
     transientErrorCooldownSeconds: undefined,
     videoResultAuthCacheTTL: undefined,
+    routingSessionAffinityExpiringWindow: undefined,
     claudeHeaderTimezone: undefined,
     codexStreamBootstrapTimeout: undefined,
     antigravityConnectionPoolIdleTimeout: undefined,
@@ -324,6 +330,7 @@ export function validateVisualAdditions(
   }
   for (const key of [
     'videoResultAuthCacheTTL',
+    'routingSessionAffinityExpiringWindow',
     'antigravityConnectionPoolIdleTimeout',
     'codexStreamBootstrapTimeout',
   ] as const) {
@@ -340,6 +347,7 @@ export function validateVisualAdditions(
         : goDurationSeconds(value);
     if (duration === undefined) errors[key] = 'invalid_duration';
     else if (codex && duration < 0) errors[key] = 'invalid_duration';
+    else if (key === 'routingSessionAffinityExpiringWindow' && duration < 0) errors[key] = 'invalid_duration';
     else if (key === 'videoResultAuthCacheTTL' && duration <= 0) errors[key] = 'positive_duration';
     // Pool timeout <= 0 switches to short-lived connections; > 210s is clamped by the backend.
   }

@@ -58,6 +58,7 @@ const raw = {
       session_affinity: true,
       affinity_ttl: '1h',
       rebind_on: 'quota',
+      expiring_window: '24h',
     },
     { t: T0 - HOUR, strategy: 'round-robin', session_affinity: false },
   ],
@@ -74,7 +75,12 @@ describe('cache history', () => {
       'switched',
     ]);
     expect(history.markers.map((m) => m.strategy)).toEqual(['round-robin', 'soonest-reset']);
-    expect(history.markers[1]).toMatchObject({ sessionAffinity: true, rebindOn: 'quota' });
+    expect(history.markers[1]).toMatchObject({
+      sessionAffinity: true,
+      rebindOn: 'quota',
+      expiringWindow: '24h',
+    });
+    expect(history.markers[0].expiringWindow).toBe('');
     expect(history.bucketMs).toBe(300_000);
   });
 

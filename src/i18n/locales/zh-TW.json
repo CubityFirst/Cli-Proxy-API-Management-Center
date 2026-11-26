@@ -1222,6 +1222,10 @@
           "label": "子代理工作階段親和性",
           "hint": "預設開啟，僅在啟用工作階段親和性時生效。子代理繼承父工作階段的憑證以重用快取；關閉後透過憑證池分散子代理請求，提高並行能力。"
         },
+        "routingSessionAffinityExpiringWindow": {
+          "label": "工作階段遷移至即將過期的額度",
+          "hint": "僅在啟用工作階段親和性時生效。當某個帳號的每週額度將在此時間範圍內重置且該帳號可用時，進行中的工作階段會遷移到該帳號，以免額度浪費。每次遷移會重寫一次提示快取。每週或 5 小時額度已用 90% 以上的帳號會被略過。留空表示停用。範例：24h。"
+        },
         "saveCooldownStatus": {
           "label": "持久保存冷卻狀態",
           "hint": "將各憑證的冷卻狀態儲存至驗證檔案旁的 .cds 檔案。預設關閉，關閉時僅在記憶體中保存狀態。"
@@ -1751,6 +1755,7 @@
     "settings_unknown": "Before tracking",
     "settings_affinity": "affinity {{ttl}}, rebind on {{rebind}}",
     "settings_no_affinity": "no affinity",
+    "settings_expiring": "moves to expiring quota within {{window}}",
     "current": "current",
     "col_setting": "Setting",
     "col_period": "Period",

@@ -154,7 +154,8 @@ export function sameSettings(a: CacheSettings | null, b: CacheSettings | null): 
     a.strategy === b.strategy &&
     a.sessionAffinity === b.sessionAffinity &&
     a.affinityTtl === b.affinityTtl &&
-    a.rebindOn === b.rebindOn
+    a.rebindOn === b.rebindOn &&
+    a.expiringWindow === b.expiringWindow
   );
 }
 

@@ -165,6 +165,17 @@ export function SectionNetwork({
             onChange({ routingSessionAffinitySubagents })
           }
         />
+        <TextSetting
+          fieldId="routingSessionAffinityExpiringWindow"
+          size="sm"
+          label={t('config_management.visual.additions.routingSessionAffinityExpiringWindow.label')}
+          description={t('config_management.visual.additions.routingSessionAffinityExpiringWindow.hint')}
+          placeholder="24h"
+          value={values.routingSessionAffinityExpiringWindow}
+          onChange={(routingSessionAffinityExpiringWindow) => onChange({ routingSessionAffinityExpiringWindow })}
+          disabled={disabled}
+          error={getValidationMessage(t, validationErrors?.routingSessionAffinityExpiringWindow)}
+        />
         <ToggleSetting
           fieldId="saveCooldownStatus"
           label={t('config_management.visual.additions.saveCooldownStatus.label')}

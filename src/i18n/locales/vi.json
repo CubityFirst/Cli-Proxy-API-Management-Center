@@ -1444,6 +1444,10 @@
           "label": "Session affinity cho subagent",
           "hint": "Mặc định bật; chỉ có hiệu lực khi session affinity được bật. Subagent kế thừa credential của cha để tái sử dụng cache. Tắt để phân bổ subagent trên toàn bộ pool credential nhằm tăng tính đồng thời."
         },
+        "routingSessionAffinityExpiringWindow": {
+          "label": "Chuyển phiên sang hạn mức sắp hết hạn",
+          "hint": "Chỉ có hiệu lực khi bật Session Affinity. Khi một tài khoản có hạn mức tuần sẽ đặt lại trong khoảng thời gian này khả dụng, các phiên đang chạy sẽ được chuyển sang tài khoản đó để không lãng phí hạn mức. Mỗi lần chuyển tốn một lần ghi lại bộ nhớ đệm prompt. Bỏ qua các tài khoản đã dùng từ 90% giới hạn tuần hoặc giới hạn 5 giờ trở lên. Để trống để tắt. Ví dụ: 24h."
+        },
         "saveCooldownStatus": {
           "label": "Lưu trữ bền vững trạng thái cooldown",
           "hint": "Lưu trạng thái cooldown của từng credential vào các file .cds cạnh file xác thực. Mặc định tắt; nếu tắt trạng thái chỉ được giữ trong bộ nhớ."
@@ -1703,6 +1707,7 @@
     "settings_unknown": "Before tracking",
     "settings_affinity": "affinity {{ttl}}, rebind on {{rebind}}",
     "settings_no_affinity": "no affinity",
+    "settings_expiring": "moves to expiring quota within {{window}}",
     "current": "current",
     "col_setting": "Setting",
     "col_period": "Period",

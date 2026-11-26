@@ -1222,6 +1222,10 @@
           "label": "子代理会话亲和性",
           "hint": "默认开启，仅在启用会话亲和性时生效。子代理继承父会话的凭证以复用缓存；关闭后通过凭证池分散子代理请求，提高并发能力。"
         },
+        "routingSessionAffinityExpiringWindow": {
+          "label": "会话迁移至即将过期的额度",
+          "hint": "仅在启用会话亲和性时生效。当某个账号的每周额度将在此时间窗口内重置且该账号可用时，进行中的会话会迁移到该账号，以免额度浪费。每次迁移会重写一次提示缓存。每周或 5 小时额度已用 90% 及以上的账号会被跳过。留空表示禁用。示例：24h。"
+        },
         "saveCooldownStatus": {
           "label": "持久化冷却状态",
           "hint": "将各凭证的冷却状态保存到认证文件旁的 .cds 文件。默认关闭，关闭时仅在内存中保存状态。"
@@ -1751,6 +1755,7 @@
     "settings_unknown": "Before tracking",
     "settings_affinity": "affinity {{ttl}}, rebind on {{rebind}}",
     "settings_no_affinity": "no affinity",
+    "settings_expiring": "moves to expiring quota within {{window}}",
     "current": "current",
     "col_setting": "Setting",
     "col_period": "Period",

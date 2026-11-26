@@ -1229,6 +1229,10 @@
           "label": "Alt Ajan Oturum Yakınlığı",
           "hint": "Varsayılan Etkin. Yalnızca Oturum Yakınlığı Açıkken Etkilidir. Alt Ajanlar Önbellekleri Yeniden Kullanmak için Üstlerinin Kimlik Bilgisini Devralır. Daha Fazla Eşzamanlılık için Alt Ajanları Kimlik Bilgisi Havuzuna Dağıtmak Üzere Kapat."
         },
+        "routingSessionAffinityExpiringWindow": {
+          "label": "Oturumları süresi dolacak kotaya taşı",
+          "hint": "Yalnızca oturum yakınlığı etkinken geçerlidir. Haftalık kotası bu süre içinde sıfırlanacak bir hesap kullanılabilir olduğunda, kota boşa gitmesin diye devam eden oturumlar o hesaba taşınır. Her taşıma bir istem önbelleğinin yeniden yazılmasına mal olur. Haftalık veya 5 saatlik sınırının %90 veya fazlasını kullanmış hesaplar atlanır. Devre dışı bırakmak için boş bırakın. Örnek: 24h."
+        },
         "saveCooldownStatus": {
           "label": "Soğuma Durumunu Kalıcı Tut",
           "hint": "Kimlik Bilgisi Başına Soğuma Durumunu Kimlik Dosyalarının Yanındaki .cds Dosyalarına Kaydet. Varsayılan Kapalı. Aksi Halde Durum Yalnızca Bellekte Tutulur."
@@ -1758,6 +1762,7 @@
     "settings_unknown": "Before tracking",
     "settings_affinity": "affinity {{ttl}}, rebind on {{rebind}}",
     "settings_no_affinity": "no affinity",
+    "settings_expiring": "moves to expiring quota within {{window}}",
     "current": "current",
     "col_setting": "Setting",
     "col_period": "Period",

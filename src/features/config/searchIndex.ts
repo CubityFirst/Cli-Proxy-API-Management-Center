@@ -450,6 +450,14 @@ export const CONFIG_FIELD_SEARCH_INDEX: ConfigFieldSearchEntry[] = [
     yamlKeys: ['routing', 'session-affinity-ttl'],
   },
   {
+    fieldId: 'routingSessionAffinityExpiringWindow',
+    sectionId: 'network',
+    labelKey: L('additions.routingSessionAffinityExpiringWindow.label'),
+    hintKey: L('additions.routingSessionAffinityExpiringWindow.hint'),
+    yamlKeys: ['routing', 'session-affinity-expiring-window'],
+    keywords: ['expiring', 'weekly', 'quota', 'soonest-reset', 'affinity'],
+  },
+  {
     fieldId: 'forceModelPrefix',
     sectionId: 'network',
     labelKey: L('sections.network.force_model_prefix'),

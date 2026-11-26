@@ -28,6 +28,7 @@ export type VisualConfigFieldPath =
   | 'discoveryServiceType'
   | 'transientErrorCooldownSeconds'
   | 'videoResultAuthCacheTTL'
+  | 'routingSessionAffinityExpiringWindow'
   | 'claudeHeaderTimezone'
   | 'codexStreamBootstrapTimeout'
   | 'antigravityConnectionPoolIdleTimeout'
@@ -159,6 +160,7 @@ export type VisualConfigValues = {
   discoveryAdvertiseManagement: boolean;
 
   routingSessionAffinitySubagents: boolean;
+  routingSessionAffinityExpiringWindow: string;
   saveCooldownStatus: boolean;
   transientErrorCooldownSeconds: string;
   videoResultAuthCacheTTL: string;
@@ -269,6 +271,7 @@ export const DEFAULT_VISUAL_VALUES: VisualConfigValues = {
   discoveryAdvertiseManagement: false,
 
   routingSessionAffinitySubagents: true,
+  routingSessionAffinityExpiringWindow: '',
   saveCooldownStatus: false,
   transientErrorCooldownSeconds: '',
   videoResultAuthCacheTTL: '',
