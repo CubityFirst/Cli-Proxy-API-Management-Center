@@ -1,13 +1,21 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import i18n from '@/i18n/index';
 import { normalizeCacheHistory } from '@/services/api/cacheHistory';
 import {
   cacheSeries,
   comparableRequests,
+  emptyTotals,
+  formatShare,
   formatTokens,
   hitRate,
   settingsSegments,
+  switchLossShare,
+  switchMissRate,
   totalsBetween,
 } from '@/features/quota/cacheHistoryModel';
+import { CacheSummary } from '@/features/quota/components/CacheStats';
 
 const HOUR = 3600;
 const T0 = 1_795_000_000 - (1_795_000_000 % HOUR);
@@ -123,5 +131,52 @@ describe('cache history', () => {
     expect(formatTokens(12_400)).toBe('12k');
     expect(formatTokens(1_240)).toBe('1.2k');
     expect(formatTokens(3_100_000)).toBe('3.1M');
+  });
+
+  test('switch-miss rate over follow-ups, and the prompt share lost to switches', () => {
+    const totals = totalsBetween(history, T0 * 1000, (T0 + 6 * HOUR) * 1000);
+    // 1 switch miss among 9 follow-ups (the new conversation isn't one).
+    expect(switchMissRate(totals)).toBeCloseTo(1 / 9, 6);
+    expect(switchLossShare(totals)).toBeCloseTo(44_000 / 390_040, 6);
+    const empty = totalsBetween(history, 0, 1);
+    expect(switchMissRate(empty)).toBeNull();
+    expect(switchLossShare(empty)).toBeNull();
+  });
+
+  test('formats shares with enough digits for small values', () => {
+    expect(formatShare(0.0022)).toBe('0.22%');
+    expect(formatShare(0.034)).toBe('3.4%');
+    expect(formatShare(0.123)).toBe('12%');
+    expect(formatShare(0)).toBe('0%');
+    expect(formatShare(null)).toBe('–');
+  });
+});
+
+describe('CacheSummary', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  test('leads with the switch-miss rate; the all-causes hit rate is context', () => {
+    const totals = emptyTotals();
+    Object.assign(totals, { requests: 1_010, read: 98_000_000, write: 1_500_000, input: 500_000 });
+    totals.byReason.new.requests = 10;
+    totals.byReason.continued.requests = 997;
+    Object.assign(totals.byReason.switched, { requests: 3, misses: 2, lost: 270_000 });
+
+    const markup = renderToStaticMarkup(createElement(CacheSummary, { totals, color: '#257de0' }));
+    // Headline (2 of 1,000 follow-ups), then its hint, then the stats.
+    const headline = markup.indexOf('0.20%');
+    const hint = markup.indexOf('of follow-up requests lost their cache to an account switch');
+    expect(headline).toBeGreaterThanOrEqual(0);
+    expect(hint).toBeGreaterThan(headline);
+    expect(markup.indexOf('270k')).toBeGreaterThan(hint);
+    expect(markup).toContain('0.27% of prompt tokens');
+    expect(markup).toContain('1,000');
+    expect(markup).toContain('Hit rate, all causes');
+    expect(markup).toContain('98%');
+    // The hit rate is no longer the headline.
+    expect(headline).toBeLessThan(markup.indexOf('98%'));
+    expect(markup).not.toContain('read from cache');
   });
 });

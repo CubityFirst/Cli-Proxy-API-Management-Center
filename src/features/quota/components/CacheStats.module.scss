@@ -147,6 +147,12 @@
   min-width: 0;
 }
 
+/* Context only: the all-causes figure routing can't move. */
+.statMuted dd {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .statNote {
   margin-left: 6px;
   font-size: 12px;
@@ -196,13 +202,6 @@
   fill: var(--text-tertiary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-}
-
-.hitLine {
-  stroke: var(--text-primary);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
 }
 
 .markerLine {

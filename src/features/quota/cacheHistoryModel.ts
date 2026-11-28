@@ -49,9 +49,35 @@ export function hitRate(tally: CacheTally): number | null {
   return prompt > 0 ? tally.read / prompt : null;
 }
 
-/** Requests that had a previous request to compare with (not new or untracked). */
+/**
+ * Follow-up requests: those with a previous request in their conversation to
+ * compare with (not new or untracked).
+ */
 export function comparableRequests(totals: CacheTotals): number {
   return LOST_REASONS.reduce((sum, reason) => sum + totals.byReason[reason].requests, 0);
+}
+
+/**
+ * Share of follow-up requests that lost their cache to an account switch, the
+ * part of cache loss routing decides. Null without follow-up requests.
+ */
+export function switchMissRate(totals: CacheTotals): number | null {
+  const followUps = comparableRequests(totals);
+  return followUps > 0 ? totals.byReason.switched.misses / followUps : null;
+}
+
+/** Share of all prompt tokens re-processed because of an account switch. */
+export function switchLossShare(totals: CacheTotals): number | null {
+  const prompt = totals.read + totals.write + totals.input;
+  return prompt > 0 ? totals.byReason.switched.lost / prompt : null;
+}
+
+/** A share as a percentage with enough digits for small values: 0.22%, 3.4%, 12%. */
+export function formatShare(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '–';
+  const percent = value * 100;
+  if (percent === 0) return '0%';
+  return `${percent.toFixed(percent < 1 ? 2 : percent < 10 ? 1 : 0)}%`;
 }
 
 /** Sums every bucket starting in [startMs, endMs). */

@@ -1,8 +1,9 @@
 /**
- * Prompt-cache card: how much of Claude's prompt was served from cache, and
- * how much had to be processed again because a conversation moved to another
- * account, sat idle past the cache lifetime, or changed in some other way.
- * Routing setting changes are marked so their effect can be compared.
+ * Prompt-cache card, about the part of cache loss routing decides: follow-up
+ * requests that lost their cache because the conversation moved to another
+ * account. Idle expiry, model changes, compaction and new conversations are
+ * recorded too but left out, except in the all-causes hit rate. Routing setting
+ * changes are marked so their effect can be compared.
  *
  * Maths lives in cacheHistoryModel.ts; this file is data plumbing and layout.
  */
@@ -15,16 +16,18 @@ import { cacheHistoryApi } from '@/services/api/cacheHistory';
 import type { CacheHistory, CacheMarker, CacheSettings } from '@/services/api/cacheHistory';
 import type { ResolvedTheme } from '@/types';
 import {
-  LOST_REASONS,
   cacheSeries,
   comparableRequests,
+  formatShare,
   formatTokens,
   hitRate,
   sameSettings,
   settingsSegments,
+  switchLossShare,
+  switchMissRate,
   totalsBetween,
 } from '../cacheHistoryModel';
-import type { CachePoint, LostReason, SettingsSegment } from '../cacheHistoryModel';
+import type { CachePoint, CacheTotals, SettingsSegment } from '../cacheHistoryModel';
 import { useElementWidth } from '../useElementWidth';
 import styles from './CacheStats.module.scss';
 
@@ -36,12 +39,8 @@ const RANGES = {
 } as const;
 type RangeId = keyof typeof RANGES;
 
-/** Categorical slots 1-3, validated as a set against both card surfaces. */
-const REASON_COLORS: Record<LostReason, Record<ResolvedTheme, string>> = {
-  switched: { light: '#257de0', dark: '#338ced' },
-  expired: { light: '#f47230', dark: '#e76624' },
-  continued: { light: '#00b894', dark: '#00a888' },
-};
+/** Categorical slot 1, validated against both card surfaces. */
+const SWITCH_COLOR: Record<ResolvedTheme, string> = { light: '#257de0', dark: '#338ced' };
 
 export interface CacheStatsProps {
   resolvedTheme: ResolvedTheme;
@@ -95,12 +94,6 @@ function useFormatters(locale: string) {
 
 const pct = (value: number | null) => (value === null ? '–' : `${Math.round(value * 100)}%`);
 
-/** Switch misses per 100 requests that had a previous request to compare with. */
-const switchMissRate = (segment: { totals: SettingsSegment['totals'] }) => {
-  const comparable = comparableRequests(segment.totals);
-  return comparable > 0 ? (segment.totals.byReason.switched.misses / comparable) * 100 : null;
-};
-
 export function CacheStats({ resolvedTheme, refreshToken }: CacheStatsProps) {
   const { t, i18n } = useTranslation();
   const now = useNow();
@@ -124,18 +117,12 @@ export function CacheStats({ resolvedTheme, refreshToken }: CacheStatsProps) {
 
   if (available === null) return null;
 
-  const colors = {
-    switched: REASON_COLORS.switched[resolvedTheme],
-    expired: REASON_COLORS.expired[resolvedTheme],
-    continued: REASON_COLORS.continued[resolvedTheme],
-  };
+  const color = SWITCH_COLOR[resolvedTheme];
   const markers = (history?.markers ?? []).filter(
     (marker) => marker.atMs > startMs && marker.atMs < endMs
   );
   const allMarkers = history?.markers ?? [];
   const currentSettings = allMarkers[allMarkers.length - 1] ?? null;
-  const missRate = switchMissRate({ totals });
-  const switched = totals.byReason.switched;
 
   return (
     <article className={styles.card} aria-label={t('cache_stats.title')}>
@@ -170,42 +157,7 @@ export function CacheStats({ resolvedTheme, refreshToken }: CacheStatsProps) {
         <p className={styles.notice}>{t('cache_stats.empty')}</p>
       ) : (
         <>
-          <div className={styles.summary}>
-            <div className={styles.headline}>
-              <span className={styles.total}>{pct(hitRate(totals))}</span>
-              <span className={styles.totalHint}>{t('cache_stats.hit_rate_hint')}</span>
-            </div>
-            <dl className={styles.stats}>
-              <div className={styles.stat}>
-                <dt>{t('cache_stats.stat_switch_misses')}</dt>
-                <dd>
-                  {switched.misses}
-                  {missRate !== null && (
-                    <span className={styles.statNote}>
-                      {t('cache_stats.per_hundred', { rate: missRate.toFixed(1) })}
-                    </span>
-                  )}
-                </dd>
-              </div>
-              {LOST_REASONS.map((reason) => (
-                <div key={reason} className={styles.stat}>
-                  <dt>
-                    <span
-                      className={styles.swatch}
-                      style={{ background: colors[reason] }}
-                      aria-hidden="true"
-                    />
-                    {t(`cache_stats.stat_lost_${reason}`)}
-                  </dt>
-                  <dd>{formatTokens(totals.byReason[reason].lost)}</dd>
-                </div>
-              ))}
-              <div className={styles.stat}>
-                <dt>{t('cache_stats.stat_requests')}</dt>
-                <dd>{totals.requests.toLocaleString(i18n.language)}</dd>
-              </div>
-            </dl>
-          </div>
+          <CacheSummary totals={totals} color={color} />
 
           <CacheChart
             points={points}
@@ -214,37 +166,21 @@ export function CacheStats({ resolvedTheme, refreshToken }: CacheStatsProps) {
             startMs={startMs}
             endMs={endMs}
             markers={markers}
-            colors={colors}
+            color={color}
             fmt={fmt}
             dayTicks={rangeId === 'week'}
           />
 
-          <footer className={styles.legend}>
-            <span className={styles.legendItem}>
-              <svg width="22" height="6" aria-hidden="true">
-                <line x1="0" y1="3" x2="22" y2="3" className={styles.hitLine} />
-              </svg>
-              {t('cache_stats.legend_hit_rate')}
-            </span>
-            {LOST_REASONS.map((reason) => (
-              <span key={reason} className={styles.legendItem}>
-                <span
-                  className={styles.swatch}
-                  style={{ background: colors[reason] }}
-                  aria-hidden="true"
-                />
-                {t(`cache_stats.reason_${reason}`)}
-              </span>
-            ))}
-            {markers.length > 0 && (
+          {markers.length > 0 && (
+            <footer className={styles.legend}>
               <span className={styles.legendItem}>
                 <svg width="10" height="12" aria-hidden="true">
                   <line x1="5" y1="0" x2="5" y2="12" className={styles.markerLine} />
                 </svg>
                 {t('cache_stats.legend_marker')}
               </span>
-            )}
-          </footer>
+            </footer>
+          )}
 
           <SettingsTable segments={segments} current={currentSettings} fmt={fmt} />
 
@@ -252,6 +188,57 @@ export function CacheStats({ resolvedTheme, refreshToken }: CacheStatsProps) {
         </>
       )}
     </article>
+  );
+}
+
+/* -------------------------------------------------------------- summary */
+
+export interface CacheSummaryProps {
+  totals: CacheTotals;
+  /** Colour of the switch series in the chart, for the matching swatch. */
+  color: string;
+}
+
+/** Headline switch-miss rate and the figures behind it; pure, so tests can render it. */
+export function CacheSummary({ totals, color }: CacheSummaryProps) {
+  const { t, i18n } = useTranslation();
+  const switched = totals.byReason.switched;
+  const share = switchLossShare(totals);
+  return (
+    <div className={styles.summary}>
+      <div className={styles.headline}>
+        <span className={styles.total}>{formatShare(switchMissRate(totals))}</span>
+        <span className={styles.totalHint}>{t('cache_stats.headline_hint')}</span>
+      </div>
+      <dl className={styles.stats}>
+        <div className={styles.stat}>
+          <dt>
+            <span className={styles.swatch} style={{ background: color }} aria-hidden="true" />
+            {t('cache_stats.stat_lost_switched')}
+          </dt>
+          <dd>
+            {formatTokens(switched.lost)}
+            {share !== null && (
+              <span className={styles.statNote}>
+                {t('cache_stats.stat_switch_share', { share: formatShare(share) })}
+              </span>
+            )}
+          </dd>
+        </div>
+        <div className={styles.stat}>
+          <dt>{t('cache_stats.stat_switch_misses')}</dt>
+          <dd>{switched.misses.toLocaleString(i18n.language)}</dd>
+        </div>
+        <div className={styles.stat}>
+          <dt>{t('cache_stats.stat_followups')}</dt>
+          <dd>{comparableRequests(totals).toLocaleString(i18n.language)}</dd>
+        </div>
+        <div className={`${styles.stat} ${styles.statMuted}`}>
+          <dt>{t('cache_stats.stat_hit_rate_all')}</dt>
+          <dd>{pct(hitRate(totals))}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 
@@ -297,51 +284,44 @@ function SettingsTable({
             <th scope="col">{t('cache_stats.col_setting')}</th>
             <th scope="col">{t('cache_stats.col_period')}</th>
             <th scope="col" className={styles.num}>
-              {t('cache_stats.col_requests')}
-            </th>
-            <th scope="col" className={styles.num}>
-              {t('cache_stats.col_hit_rate')}
+              {t('cache_stats.col_followups')}
             </th>
             <th scope="col" className={styles.num}>
               {t('cache_stats.col_switch_misses')}
             </th>
-            {LOST_REASONS.map((reason) => (
-              <th key={reason} scope="col" className={styles.num}>
-                {t(`cache_stats.col_lost_${reason}`)}
-              </th>
-            ))}
+            <th scope="col" className={styles.num}>
+              {t('cache_stats.col_switch_rate')}
+            </th>
+            <th scope="col" className={styles.num}>
+              {t('cache_stats.col_lost_switched')}
+            </th>
           </tr>
         </thead>
         <tbody>
-          {segments.map((segment, index) => {
-            const rate = switchMissRate(segment);
-            return (
-              <tr key={segment.fromMs}>
-                <th scope="row">
-                  {label(segment.settings)}
-                  {index === 0 && current && sameSettings(segment.settings, current) && (
-                    <span className={styles.current}>{t('cache_stats.current')}</span>
-                  )}
-                </th>
-                <td>
-                  {t('cache_stats.period', {
-                    from: fmt.dayTime(segment.fromMs),
-                    to: fmt.dayTime(segment.toMs),
-                  })}
-                </td>
-                <td className={styles.num}>
-                  {segment.totals.requests.toLocaleString(i18n.language)}
-                </td>
-                <td className={styles.num}>{pct(hitRate(segment.totals))}</td>
-                <td className={styles.num}>{rate === null ? '–' : rate.toFixed(1)}</td>
-                {LOST_REASONS.map((reason) => (
-                  <td key={reason} className={styles.num}>
-                    {formatTokens(segment.totals.byReason[reason].lost)}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
+          {segments.map((segment, index) => (
+            <tr key={segment.fromMs}>
+              <th scope="row">
+                {label(segment.settings)}
+                {index === 0 && current && sameSettings(segment.settings, current) && (
+                  <span className={styles.current}>{t('cache_stats.current')}</span>
+                )}
+              </th>
+              <td>
+                {t('cache_stats.period', {
+                  from: fmt.dayTime(segment.fromMs),
+                  to: fmt.dayTime(segment.toMs),
+                })}
+              </td>
+              <td className={styles.num}>
+                {comparableRequests(segment.totals).toLocaleString(i18n.language)}
+              </td>
+              <td className={styles.num}>
+                {segment.totals.byReason.switched.misses.toLocaleString(i18n.language)}
+              </td>
+              <td className={styles.num}>{formatShare(switchMissRate(segment.totals))}</td>
+              <td className={styles.num}>{formatTokens(segment.totals.byReason.switched.lost)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -357,16 +337,14 @@ interface CacheChartProps {
   startMs: number;
   endMs: number;
   markers: CacheMarker[];
-  colors: Record<LostReason, string>;
+  color: string;
   fmt: ReturnType<typeof useFormatters>;
   dayTicks: boolean;
 }
 
 const PAD = { top: 22, right: 16, bottom: 28, left: 56 };
-const HIT_H = 84;
-const PANEL_GAP = 42;
-const LOST_H = 150;
-const HEIGHT = PAD.top + HIT_H + PANEL_GAP + LOST_H + PAD.bottom;
+const PLOT_H = 180;
+const HEIGHT = PAD.top + PLOT_H + PAD.bottom;
 const BAR_GAP = 2;
 
 function niceCeil(value: number): number {
@@ -377,13 +355,14 @@ function niceCeil(value: number): number {
   return step * magnitude;
 }
 
-/** A bar segment; only the top of the stack gets rounded corners. */
-function barPath(x: number, y: number, w: number, h: number, round: boolean): string {
-  const r = round ? Math.min(3, w / 2, h) : 0;
+/** A bar with rounded top corners. */
+function barPath(x: number, y: number, w: number, h: number): string {
+  const r = Math.min(3, w / 2, h);
   if (r <= 0) return `M${x},${y}h${w}v${h}h${-w}Z`;
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
 
+/** Tokens re-processed after an account switch, one bar per step. */
 function CacheChart({
   points,
   stepMs,
@@ -391,7 +370,7 @@ function CacheChart({
   startMs,
   endMs,
   markers,
-  colors,
+  color,
   fmt,
   dayTicks,
 }: CacheChartProps) {
@@ -403,34 +382,12 @@ function CacheChart({
   const innerW = Math.max(0, width - PAD.left - PAD.right);
   const x = (ms: number) => PAD.left + ((ms - startMs) / (endMs - startMs)) * innerW;
   const stepW = points.length > 0 ? innerW / points.length : 0;
-  const hitTop = PAD.top;
-  const lostTop = PAD.top + HIT_H + PANEL_GAP;
-  const yHit = (rate: number) => hitTop + HIT_H - rate * HIT_H;
-
-  const lostMax = niceCeil(
-    Math.max(
-      1,
-      ...points.map((point) =>
-        LOST_REASONS.reduce((sum, reason) => sum + point.totals.byReason[reason].lost, 0)
-      )
-    )
-  );
-  const yLost = (value: number) => lostTop + LOST_H - (value / lostMax) * LOST_H;
-
-  // Hit-rate line through step centres, broken across steps without requests.
-  let hitPath = '';
-  let penUp = true;
-  for (const point of points) {
-    const rate = hitRate(point.totals);
-    if (rate === null) {
-      penUp = true;
-      continue;
-    }
-    const px = (x(point.t) + stepW / 2).toFixed(1);
-    const py = yHit(rate).toFixed(1);
-    hitPath += `${penUp ? 'M' : 'L'}${px},${py}`;
-    penUp = false;
-  }
+  const plotTop = PAD.top;
+  const plotBottom = PAD.top + PLOT_H;
+  const lostOf = (point: CachePoint) => point.totals.byReason.switched.lost;
+  // At least 1k so a range without switch losses still gets a readable axis.
+  const lostMax = niceCeil(Math.max(1000, ...points.map(lostOf)));
+  const y = (value: number) => plotBottom - (value / lostMax) * PLOT_H;
 
   // Gridlines at each tick; day labels sit centred on the visible part of each day.
   const ticks: { lineAt: number | null; labelAt: number | null; text: string }[] = [];
@@ -476,31 +433,8 @@ function CacheChart({
           onPointerMove={onMove}
           onPointerLeave={() => setHoverIndex(null)}
         >
-          <text className={styles.panelTitle} x={PAD.left} y={hitTop - 8}>
-            {t('cache_stats.panel_hit_rate')}
-          </text>
-          {[0, 0.5, 1].map((tick) => (
-            <g key={`hit-${tick}`}>
-              <line
-                className={styles.gridLine}
-                x1={PAD.left}
-                x2={PAD.left + innerW}
-                y1={yHit(tick)}
-                y2={yHit(tick)}
-              />
-              <text
-                className={styles.axisText}
-                x={PAD.left - 8}
-                y={yHit(tick) + 4}
-                textAnchor="end"
-              >
-                {pct(tick)}
-              </text>
-            </g>
-          ))}
-
-          <text className={styles.panelTitle} x={PAD.left} y={lostTop - 8}>
-            {t('cache_stats.panel_lost')}
+          <text className={styles.panelTitle} x={PAD.left} y={plotTop - 8}>
+            {t('cache_stats.panel_lost_switched')}
           </text>
           {[0, lostMax / 2, lostMax].map((tick) => (
             <g key={`lost-${tick}`}>
@@ -508,15 +442,10 @@ function CacheChart({
                 className={styles.gridLine}
                 x1={PAD.left}
                 x2={PAD.left + innerW}
-                y1={yLost(tick)}
-                y2={yLost(tick)}
+                y1={y(tick)}
+                y2={y(tick)}
               />
-              <text
-                className={styles.axisText}
-                x={PAD.left - 8}
-                y={yLost(tick) + 4}
-                textAnchor="end"
-              >
+              <text className={styles.axisText} x={PAD.left - 8} y={y(tick) + 4} textAnchor="end">
                 {formatTokens(tick)}
               </text>
             </g>
@@ -529,8 +458,8 @@ function CacheChart({
                   className={styles.gridLineFaint}
                   x1={x(tick.lineAt)}
                   x2={x(tick.lineAt)}
-                  y1={hitTop}
-                  y2={lostTop + LOST_H}
+                  y1={plotTop}
+                  y2={plotBottom}
                 />
               )}
               {tick.labelAt !== null && (
@@ -547,33 +476,20 @@ function CacheChart({
           ))}
 
           {points.map((point, index) => {
-            const barW = Math.max(1, stepW - BAR_GAP);
-            const barX = x(point.t) + BAR_GAP / 2;
-            const stacked = LOST_REASONS.filter((reason) => point.totals.byReason[reason].lost > 0);
-            let base = 0;
+            const value = lostOf(point);
+            if (value <= 0) return null;
+            const top = y(value);
+            const h = plotBottom - top;
+            if (h <= 0) return null;
             return (
-              <g key={point.t} opacity={hoverIndex === null || hoverIndex === index ? 1 : 0.55}>
-                {stacked.map((reason, order) => {
-                  const value = point.totals.byReason[reason].lost;
-                  const top = yLost(base + value);
-                  // 2px surface gap between stacked segments.
-                  const gap = order > 0 ? BAR_GAP : 0;
-                  const h = Math.max(0, yLost(base) - top - gap);
-                  base += value;
-                  if (h <= 0) return null;
-                  return (
-                    <path
-                      key={reason}
-                      d={barPath(barX, top, barW, h, order === stacked.length - 1)}
-                      fill={colors[reason]}
-                    />
-                  );
-                })}
-              </g>
+              <path
+                key={point.t}
+                d={barPath(x(point.t) + BAR_GAP / 2, top, Math.max(1, stepW - BAR_GAP), h)}
+                fill={color}
+                opacity={hoverIndex === null || hoverIndex === index ? 1 : 0.55}
+              />
             );
           })}
-
-          <path d={hitPath} className={styles.hitLine} fill="none" />
 
           {markers.map((marker) => (
             <g key={marker.atMs}>
@@ -581,8 +497,8 @@ function CacheChart({
                 className={styles.markerLine}
                 x1={x(marker.atMs)}
                 x2={x(marker.atMs)}
-                y1={hitTop}
-                y2={lostTop + LOST_H}
+                y1={plotTop}
+                y2={plotBottom}
               />
               <title>{`${fmt.dayTime(marker.atMs)} · ${label(marker)}`}</title>
             </g>
@@ -593,8 +509,8 @@ function CacheChart({
               className={styles.hoverLine}
               x1={hoverLeft}
               x2={hoverLeft}
-              y1={hitTop}
-              y2={lostTop + LOST_H}
+              y1={plotTop}
+              y2={plotBottom}
               pointerEvents="none"
             />
           )}
@@ -616,29 +532,23 @@ function CacheChart({
             })}
           </div>
           <div className={styles.tooltipRow}>
-            <span>{t('cache_stats.legend_hit_rate')}</span>
-            <strong>{pct(hitRate(hover.totals))}</strong>
-          </div>
-          <div className={styles.tooltipRow}>
-            <span>{t('cache_stats.stat_requests')}</span>
-            <strong>{hover.totals.requests}</strong>
-          </div>
-          {LOST_REASONS.map((reason) => (
-            <div key={reason} className={styles.tooltipRow}>
-              <span>
-                <span
-                  className={styles.swatch}
-                  style={{ background: colors[reason] }}
-                  aria-hidden="true"
-                />
-                {t(`cache_stats.reason_${reason}`)}
-              </span>
-              <strong>{formatTokens(hover.totals.byReason[reason].lost)}</strong>
-            </div>
-          ))}
-          <div className={styles.tooltipRow}>
             <span>{t('cache_stats.stat_switch_misses')}</span>
             <strong>{hover.totals.byReason.switched.misses}</strong>
+          </div>
+          <div className={styles.tooltipRow}>
+            <span>
+              <span className={styles.swatch} style={{ background: color }} aria-hidden="true" />
+              {t('cache_stats.stat_lost_switched')}
+            </span>
+            <strong>{formatTokens(lostOf(hover))}</strong>
+          </div>
+          <div className={styles.tooltipRow}>
+            <span>{t('cache_stats.stat_followups')}</span>
+            <strong>{comparableRequests(hover.totals)}</strong>
+          </div>
+          <div className={styles.tooltipRow}>
+            <span>{t('cache_stats.col_switch_rate')}</span>
+            <strong>{formatShare(switchMissRate(hover.totals))}</strong>
           </div>
         </div>
       )}
